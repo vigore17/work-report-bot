@@ -1,5 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
+from services.access import get_user_store
+from db import get_acquiring_base
 
 from db import (
     get_store_by_id,
@@ -24,9 +26,30 @@ from states import (
 async def send_report_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    user_id = update.effective_user.id
+    store = get_user_store(user_id)
+
+    if not store:
+        await query.message.reply_text(
+            "⛔ Вы не привязаны ни к одному магазину.\n"
+            "Попросите директора прислать ссылку-приглашение."
+        )
+        return ConversationHandler.END
+
     context.user_data.clear()
-    await query.message.reply_text("Выбери магазин:", reply_markup=get_stores_keyboard())
-    return SELECTING_STORE
+
+    context.user_data["store_id"] = store["id"]
+    context.user_data["store_name"] = store["name"]
+    context.user_data["daily_plan"] = store["daily_plan"]
+    context.user_data["monthly_acquiring_plan"] = store["monthly_acquiring_plan"]
+    context.user_data["report_chat_id"] = store["report_chat_id"]
+
+    await query.message.reply_text(
+        f"{store['name']}\nВведи общую сумму за день:"
+    )
+
+    return ENTERING_GROSS_TOTAL
 
 
 async def select_store(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,7 +122,10 @@ async def enter_cashbox_total(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     report_date = get_today_str()
     month_key = get_month_key(report_date)
-    current_month_sum = get_monthly_acquiring_sum(context.user_data["store_id"], month_key)
+    current_month_sum = (
+    get_acquiring_base(context.user_data["store_id"], month_key)
+    + get_monthly_acquiring_sum(context.user_data["store_id"], month_key)
+)
 
     metrics = calculate_metrics(
         gross_total=context.user_data["gross_total"],

@@ -209,3 +209,128 @@ def get_last_reports_by_user(user_id: int, limit: int = 5):
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+def add_global_role(user_id: int, role: str, username: str | None = None):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR REPLACE INTO global_roles (user_id, role, username) VALUES (?, ?, ?)",
+        (user_id, role, username)
+    )
+    conn.commit()
+    conn.close()
+
+
+def create_store_v21(
+    name: str,
+    owner_user_id: int,
+    daily_plan: int,
+    monthly_acquiring_plan: int,
+    report_chat_id: int | None,
+    report_send_time: str,
+    boss_user_id: int | None,
+):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO stores (
+            name,
+            owner_user_id,
+            daily_plan,
+            monthly_acquiring_plan,
+            report_chat_id,
+            report_send_time,
+            boss_user_id,
+            is_active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    """, (
+        name,
+        owner_user_id,
+        daily_plan,
+        monthly_acquiring_plan,
+        report_chat_id,
+        report_send_time,
+        boss_user_id,
+    ))
+
+    store_id = cur.lastrowid
+
+    cur.execute("""
+        INSERT OR IGNORE INTO user_store_roles (user_id, store_id, role, username)
+        VALUES (?, ?, ?, ?)
+    """, (owner_user_id, store_id, "store_admin", None))
+
+    conn.commit()
+    conn.close()
+    return store_id
+
+
+def add_user_to_store(user_id: int, store_id: int, role: str = "employee", username: str | None = None):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT OR IGNORE INTO user_store_roles (user_id, store_id, role, username)
+        VALUES (?, ?, ?, ?)
+    """, (user_id, store_id, role, username))
+    conn.commit()
+    conn.close()
+
+
+def create_store_invite(code: str, store_id: int, created_by: int, role: str = "employee"):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO store_invites (code, store_id, created_by, role, is_active)
+        VALUES (?, ?, ?, ?, 1)
+    """, (code, store_id, created_by, role))
+    conn.commit()
+    conn.close()
+
+
+def get_invite_by_code(code: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT si.*, s.name as store_name
+        FROM store_invites si
+        JOIN stores s ON s.id = si.store_id
+        WHERE si.code = ? AND si.is_active = 1
+    """, (code,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def get_store_by_owner(user_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM stores WHERE owner_user_id = ? LIMIT 1", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def set_acquiring_base(store_id: int, month_key: str, base_amount: int, comment: str = ""):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT OR REPLACE INTO acquiring_adjustments (store_id, month_key, base_amount, comment)
+        VALUES (?, ?, ?, ?)
+    """, (store_id, month_key, base_amount, comment))
+    conn.commit()
+    conn.close()
+
+
+def get_acquiring_base(store_id: int, month_key: str) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT base_amount FROM acquiring_adjustments
+        WHERE store_id = ? AND month_key = ?
+    """, (store_id, month_key))
+    row = cur.fetchone()
+    conn.close()
+    return int(row["base_amount"]) if row else 0
