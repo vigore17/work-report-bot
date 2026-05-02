@@ -162,6 +162,7 @@ def save_report(
     retail_total: int,
     wholesale_total: int,
     acquiring_total: int,
+    im_orders: int,
     cash_total: int,
     cashbox_total: int,
     daily_plan: int,
@@ -177,16 +178,16 @@ def save_report(
         INSERT INTO reports (
             store_id, user_id, username, report_date, month_key,
             gross_total, retail_total, wholesale_total,
-            acquiring_total, cash_total, cashbox_total,
+            acquiring_total, im_orders, cash_total, cashbox_total,
             daily_plan, daily_plan_percent,
             monthly_acquiring_plan, monthly_acquiring_accumulated,
             sent_to_chat, sent_message_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         store_id, user_id, username, report_date, month_key,
         gross_total, retail_total, wholesale_total,
-        acquiring_total, cash_total, cashbox_total,
+        acquiring_total, im_orders, cash_total, cashbox_total,
         daily_plan, daily_plan_percent,
         monthly_acquiring_plan, monthly_acquiring_accumulated,
         sent_to_chat, sent_message_id

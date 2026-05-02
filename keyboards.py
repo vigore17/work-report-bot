@@ -5,10 +5,13 @@ from db import get_active_stores
 def get_main_menu(is_admin: bool = False):
     buttons = [
         [InlineKeyboardButton("📊 Отправить отчёт", callback_data="send_report")],
-        [InlineKeyboardButton("🧾 Мои последние отчёты", callback_data="my_reports")],
     ]
+
     if is_admin:
+        buttons.append([InlineKeyboardButton("🧾 Мои последние отчёты", callback_data="my_reports")])
+        buttons.append([InlineKeyboardButton("🚀 Настроить новый магазин", callback_data="setup_store")])
         buttons.append([InlineKeyboardButton("👨‍💼 Админ-панель", callback_data="admin_panel")])
+
     return InlineKeyboardMarkup(buttons)
 
 

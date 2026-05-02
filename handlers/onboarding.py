@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from config import DEFAULT_REPORT_CHAT_ID, DEFAULT_BOSS_USER_ID
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
@@ -106,12 +107,21 @@ async def setup_report_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return SETUP_REPORT_TIME
 
     context.user_data["setup_report_time"] = value
+    context.user_data["setup_report_chat_id"] = DEFAULT_REPORT_CHAT_ID
+    context.user_data["setup_boss_user_id"] = DEFAULT_BOSS_USER_ID
 
-    await update.message.reply_text(
-        "Введите chat_id группы, куда отправлять первую часть отчёта.\n"
-        "Если пока не знаете — введите 0."
+    text = (
+        "Проверь настройки:\n\n"
+        f"Магазин: {context.user_data['setup_store_name']}\n"
+        f"Дневной план: {context.user_data['setup_daily_plan']}\n"
+        f"План эквайринга: {context.user_data['setup_monthly_acquiring_plan']}\n"
+        f"Стартовый эквайринг: {context.user_data['setup_acquiring_base']}\n"
+        f"Время отправки: {context.user_data['setup_report_time']}\n\n"
+        "Группа отчётов и босс будут назначены автоматически."
     )
-    return SETUP_REPORT_CHAT_ID
+
+    await update.message.reply_text(text, reply_markup=setup_confirm_keyboard())
+    return SETUP_CONFIRM
 
 
 async def setup_report_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):

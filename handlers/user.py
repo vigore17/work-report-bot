@@ -20,6 +20,7 @@ from states import (
     ENTERING_ACQUIRING_TOTAL,
     ENTERING_CASHBOX_TOTAL,
     CONFIRMING_REPORT,
+    ENTERING_IM_ORDERS,
 )
 
 
@@ -109,6 +110,16 @@ async def enter_acquiring_total(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("Эквайринг не может быть больше общей суммы. Введи заново:")
         return ENTERING_ACQUIRING_TOTAL
 
+    await update.message.reply_text("Введи количество заказов ИМ:")
+    return ENTERING_IM_ORDERS
+
+async def enter_im_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        context.user_data["im_orders"] = parse_int_amount(update.message.text)
+    except ValueError:
+        await update.message.reply_text("Введите число. Например: 1")
+        return ENTERING_IM_ORDERS
+
     await update.message.reply_text("Введи сумму в кассе:")
     return ENTERING_CASHBOX_TOTAL
 
@@ -136,6 +147,8 @@ async def enter_cashbox_total(update: Update, context: ContextTypes.DEFAULT_TYPE
         monthly_acquiring_plan=context.user_data["monthly_acquiring_plan"],
         current_month_sum=current_month_sum,
     )
+
+    metrics["im_orders"] = context.user_data.get("im_orders", 0)
 
     context.user_data["report_date"] = report_date
     context.user_data["month_key"] = month_key
