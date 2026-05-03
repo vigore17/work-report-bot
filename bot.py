@@ -1,4 +1,5 @@
 import logging
+from services.scheduler import scheduler_loop
 
 from telegram.ext import (
     Application,
@@ -54,6 +55,14 @@ from states import (
     SETUP_CONFIRM,
 )
 
+from handlers.boss import (
+    boss_panel,
+    boss_stats_today,
+    boss_stats_current_month,
+    boss_months_list,
+    boss_stats_selected_month,
+)
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -65,11 +74,13 @@ logger = logging.getLogger(__name__)
 async def error_handler(update, context):
     logger.error("Exception while handling an update:", exc_info=context.error)
 
+async def post_init(app):
+    app.create_task(scheduler_loop(app))
 
 def main():
     init_db()
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     report_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(send_report_entry, pattern="^send_report$")],
@@ -146,6 +157,11 @@ def main():
     app.add_handler(CallbackQueryHandler(create_employee_invite, pattern="^create_employee_invite$"))
     app.add_handler(CallbackQueryHandler(my_reports, pattern="^my_reports$"))
     app.add_handler(CallbackQueryHandler(admin_entry, pattern="^admin_panel$"))
+    app.add_handler(CallbackQueryHandler(boss_panel, pattern="^boss_panel$"))
+    app.add_handler(CallbackQueryHandler(boss_stats_today, pattern="^boss_stats_today$"))
+    app.add_handler(CallbackQueryHandler(boss_stats_current_month, pattern="^boss_stats_month_current$"))
+    app.add_handler(CallbackQueryHandler(boss_months_list, pattern="^boss_stats_months_list$"))
+    app.add_handler(CallbackQueryHandler(boss_stats_selected_month, pattern=r"^boss_month_\d{4}-\d{2}$"))
 
     app.add_error_handler(error_handler)
 

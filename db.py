@@ -335,3 +335,71 @@ def get_acquiring_base(store_id: int, month_key: str) -> int:
     row = cur.fetchone()
     conn.close()
     return int(row["base_amount"]) if row else 0
+
+def get_daily_stats(report_date: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            s.name AS store_name,
+            r.gross_total,
+            r.daily_plan,
+            r.daily_plan_percent,
+            r.retail_total,
+            r.wholesale_total,
+            r.acquiring_total,
+            r.im_orders,
+            r.cash_total,
+            r.cashbox_total
+        FROM reports r
+        JOIN stores s ON s.id = r.store_id
+        WHERE r.report_date = ?
+        ORDER BY s.name
+    """, (report_date,))
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_month_stats(month_key: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            s.name AS store_name,
+            COUNT(r.id) AS reports_count,
+            SUM(r.gross_total) AS gross_total,
+            SUM(r.daily_plan) AS daily_plan,
+            SUM(r.retail_total) AS retail_total,
+            SUM(r.wholesale_total) AS wholesale_total,
+            SUM(r.acquiring_total) AS acquiring_total,
+            SUM(r.im_orders) AS im_orders,
+            SUM(r.cash_total) AS cash_total
+        FROM reports r
+        JOIN stores s ON s.id = r.store_id
+        WHERE r.month_key = ?
+        GROUP BY s.id
+        ORDER BY s.name
+    """, (month_key,))
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_available_months():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT month_key
+        FROM reports
+        ORDER BY month_key DESC
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+    return [row["month_key"] for row in rows]

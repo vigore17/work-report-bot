@@ -11,6 +11,7 @@ def get_main_menu(is_admin: bool = False):
         buttons.append([InlineKeyboardButton("🧾 Мои последние отчёты", callback_data="my_reports")])
         buttons.append([InlineKeyboardButton("🚀 Настроить новый магазин", callback_data="setup_store")])
         buttons.append([InlineKeyboardButton("👨‍💼 Админ-панель", callback_data="admin_panel")])
+        buttons.append([InlineKeyboardButton("👑 Панель босса", callback_data="boss_panel")])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -35,3 +36,15 @@ def get_admin_menu():
         [InlineKeyboardButton("🎯 Установить планы", callback_data="admin_set_plans")],
         [InlineKeyboardButton("💬 Установить chat_id", callback_data="admin_set_chat")],
     ])
+
+def get_user_stores_keyboard(stores):
+    buttons = []
+
+    for store in stores:
+        buttons.append([
+            InlineKeyboardButton(store["name"], callback_data=f"store_{store['id']}")
+        ])
+
+    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel_report")])
+
+    return InlineKeyboardMarkup(buttons)

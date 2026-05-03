@@ -31,3 +31,23 @@ def format_preview(store_name: str, data: dict) -> str:
         f"Сумма в кассе: {data['cashbox_total']}\n"
         f"Эквайринг за месяц: {data['monthly_acquiring_accumulated']} / {data['monthly_acquiring_plan']}"
     )
+
+def format_group_report(data: dict) -> str:
+    return (
+        "Добрый вечер\n"
+        f"{data['store_name']}:\n"
+        f"Общий {data['daily_plan']}/{data['gross_total']}/{data['daily_percent']}%\n"
+        f"Розница {data['retail_total']}\n"
+        f"Опт {data['opt_total']}\n"
+    )
+
+
+def format_boss_report(data: dict) -> str:
+    return (
+        f"{data['store_name']}\n"
+        f"Наличные: {data['cash_total']}\n"
+        f"Эквайринг: {data['acquiring_total']}\n"
+        f"Заказы ИМ: {data.get('im_orders', 0)}\n"
+        f"Сумма в кассе: {data['cashbox_total']}\n\n"
+        f"{data['acquiring_total']} / {data['monthly_acquiring_accumulated']} / {data['monthly_acquiring_plan']}"
+    )

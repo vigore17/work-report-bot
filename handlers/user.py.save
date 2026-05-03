@@ -2,8 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from services.access import get_user_store
 from db import get_acquiring_base
-from services.access import get_user_stores
-from keyboards import get_user_stores_keyboard
+from formatters import format_group_report, format_boss_report
 
 from db import (
     get_store_by_id,
@@ -31,9 +30,9 @@ async def send_report_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     user_id = update.effective_user.id
-    stores = get_user_stores(user_id)
+    store = get_user_store(user_id)
 
-    if not stores:
+    if not store:
         await query.message.reply_text(
             "⛔ Вы не привязаны ни к одному магазину.\n"
             "Попросите директора прислать ссылку-приглашение."
@@ -42,67 +41,38 @@ async def send_report_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
 
-    if len(stores) == 1:
-        store = stores[0]
-
-        context.user_data["store_id"] = store["id"]
-        context.user_data["store_name"] = store["name"]
-        context.user_data["daily_plan"] = store["daily_plan"]
-        context.user_data["monthly_acquiring_plan"] = store["monthly_acquiring_plan"]
-        context.user_data["report_chat_id"] = store["report_chat_id"]
-        context.user_data["boss_user_id"] = store["boss_user_id"]
-        context.user_data["report_send_time"] = store["report_send_time"]
-
-        await query.message.reply_text(
-            f"{store['name']}\nВведи общую сумму за день:"
-        )
-
-        return ENTERING_GROSS_TOTAL
+    context.user_data["store_id"] = store["id"]
+    context.user_data["store_name"] = store["name"]
+    context.user_data["daily_plan"] = store["daily_plan"]
+    context.user_data["monthly_acquiring_plan"] = store["monthly_acquiring_plan"]
+    context.user_data["report_chat_id"] = store["report_chat_id"]
 
     await query.message.reply_text(
-        "Выбери магазин для отчёта:",
-        reply_markup=get_user_stores_keyboard(stores)
+        f"{store['name']}\nВведи общую сумму за день:"
     )
 
-    return SELECTING_STORE
+    return ENTERING_GROSS_TOTAL
 
 
 async def select_store(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data == "cancel_report":
-        context.user_data.clear()
-        await query.message.reply_text("Отчёт отменён. Напиши /start")
-        return ConversationHandler.END
-
     store_id = int(query.data.split("_")[1])
-    user_id = update.effective_user.id
+    store = get_store_by_id(store_id)
 
-    stores = get_user_stores(user_id)
-    allowed_store = None
-
-    for store in stores:
-        if store["id"] == store_id:
-            allowed_store = store
-            break
-
-    if not allowed_store:
-        await query.message.reply_text("⛔ Нет доступа к этому магазину.")
+    if not store or not store["is_active"]:
+        await query.message.reply_text("Магазин не найден или отключён.")
         return ConversationHandler.END
 
-    context.user_data["store_id"] = allowed_store["id"]
-    context.user_data["store_name"] = allowed_store["name"]
-    context.user_data["daily_plan"] = allowed_store["daily_plan"]
-    context.user_data["monthly_acquiring_plan"] = allowed_store["monthly_acquiring_plan"]
-    context.user_data["report_chat_id"] = allowed_store["report_chat_id"]
-    context.user_data["boss_user_id"] = allowed_store["boss_user_id"]
-    context.user_data["report_send_time"] = allowed_store["report_send_time"]
+    context.user_data["store_id"] = store["id"]
+    context.user_data["store_name"] = store["name"]
+    context.user_data["daily_plan"] = store["daily_plan"]
+    context.user_data["monthly_acquiring_plan"] = store["monthly_acquiring_plan"]
+    context.user_data["report_chat_id"] = store["report_chat_id"]
 
-    await query.message.reply_text(
-        f"{allowed_store['name']}\nВведи общую сумму за день:"
-    )
-
+    await query.message.reply_text(f"Магазин выбран: {store['name']}")
+    await query.message.reply_text("Введи общую сумму за день:")
     return ENTERING_GROSS_TOTAL
 
 
@@ -201,14 +171,26 @@ async def confirm_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     metrics = context.user_data.get("metrics")
     store_name = context.user_data.get("store_name")
+    report_chat_id = context.user_data.get("report_chat_id")
 
     if not metrics or not store_name:
         await query.message.reply_text("Данные отчёта потерялись. Начни заново через /start")
         context.user_data.clear()
         return ConversationHandler.END
 
+    report_text = format_report_message(store_name, metrics)
+
     sent_to_chat = 0
     sent_message_id = None
+
+    if report_chat_id:
+        try:
+            sent_msg = await context.bot.send_message(chat_id=report_chat_id, text=report_text)
+            sent_to_chat = 1
+            sent_message_id = sent_msg.message_id
+        except Exception as e:
+            print(f"Ошибка отправки в чат: {e}")
+            sent_to_chat = 0
 
     user = update.effective_user
 
@@ -222,7 +204,6 @@ async def confirm_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         retail_total=metrics["retail_total"],
         wholesale_total=metrics["wholesale_total"],
         acquiring_total=metrics["acquiring_total"],
-        im_orders=metrics.get("im_orders", 0),
         cash_total=metrics["cash_total"],
         cashbox_total=metrics["cashbox_total"],
         daily_plan=metrics["daily_plan"],
@@ -233,17 +214,14 @@ async def confirm_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent_message_id=sent_message_id,
     )
 
-    report_send_time = context.user_data.get("report_send_time", "указанное время")
-
     context.user_data.clear()
 
-    await query.message.reply_text(
-        f"Отчёт сохранён. Он будет отправлен в {report_send_time}."
-    )
+    if sent_to_chat:
+        await query.message.reply_text("Отчёт сохранён и отправлен.")
+    else:
+        await query.message.reply_text("Отчёт сохранён, но в чат не отправился. Проверь chat_id.")
 
     return ConversationHandler.END
-
-
 
 
 async def my_reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
