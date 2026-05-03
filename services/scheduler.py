@@ -6,6 +6,7 @@ from formatters import format_group_report, format_boss_report
 
 
 async def scheduler_loop(app):
+    print("SCHEDULER LOOP RUNNING")
     while True:
         try:
             now_time = datetime.now().strftime("%H:%M")

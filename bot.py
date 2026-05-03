@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from services.scheduler import scheduler_loop
 
 from telegram.ext import (
@@ -75,7 +76,8 @@ async def error_handler(update, context):
     logger.error("Exception while handling an update:", exc_info=context.error)
 
 async def post_init(app):
-    app.create_task(scheduler_loop(app))
+    print("SCHEDULER STARTED")
+    asyncio.create_task(scheduler_loop(app))
 
 def main():
     init_db()

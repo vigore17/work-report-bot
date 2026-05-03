@@ -36,9 +36,9 @@ def format_group_report(data: dict) -> str:
     return (
         "Добрый вечер\n"
         f"{data['store_name']}:\n"
-        f"Общий {data['daily_plan']}/{data['gross_total']}/{data['daily_percent']}%\n"
+        f"Общий {data['daily_plan']}/{data['gross_total']}/{data['daily_plan_percent']}%\n"
         f"Розница {data['retail_total']}\n"
-        f"Опт {data['opt_total']}\n"
+        f"Опт {data['wholesale_total']}\n"
     )
 
 
