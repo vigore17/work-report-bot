@@ -4,6 +4,7 @@ from config import DEFAULT_REPORT_CHAT_ID, DEFAULT_BOSS_USER_ID
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
+from services.access import get_user_stores
 
 from db import (
     create_store_v21,
@@ -212,21 +213,70 @@ async def create_employee_invite(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
 
     user_id = update.effective_user.id
-    store = get_store_by_owner(user_id)
+    stores = get_user_stores(user_id)
 
-    if not store:
-        await query.message.reply_text("У вас нет магазина, где вы являетесь директором.")
+    if not stores:
+        await query.message.reply_text("У вас нет магазинов для создания приглашения.")
         return
 
+    if len(stores) == 1:
+        await send_employee_invite_for_store(update, context, stores[0])
+        return
+
+    buttons = []
+    for store in stores:
+        buttons.append([
+            InlineKeyboardButton(
+                store["name"],
+                callback_data=f"invite_store_{store['id']}"
+            )
+        ])
+
+    await query.message.reply_text(
+        "Выбери магазин для приглашения сотрудника:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+async def select_store_for_employee_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    store_id = int(query.data.replace("invite_store_", "", 1))
+    user_id = update.effective_user.id
+
+    stores = get_user_stores(user_id)
+    selected_store = None
+
+    for store in stores:
+        if store["id"] == store_id:
+            selected_store = store
+            break
+
+    if not selected_store:
+        await query.message.reply_text("⛔ Нет доступа к этому магазину.")
+        return
+
+    await send_employee_invite_for_store(update, context, selected_store)
+
+
+async def send_employee_invite_for_store(update: Update, context: ContextTypes.DEFAULT_TYPE, store):
+    query = update.callback_query
+
     code = uuid.uuid4().hex[:8].upper()
-    create_store_invite(code=code, store_id=store["id"], created_by=user_id, role="employee")
+    create_store_invite(
+        code=code,
+        store_id=store["id"],
+        created_by=update.effective_user.id,
+        role="employee"
+    )
 
     bot_username = (await context.bot.get_me()).username
     link = f"https://t.me/{bot_username}?start=join_{code}"
 
     await query.message.reply_text(
-        f"Ссылка для сотрудника магазина {store['name']}:\n\n{link}\n\n"
-        "Отправьте её сотруднику. Когда он нажмёт Start, бот сам привяжет его к магазину."
+        f"Ссылка для сотрудника магазина {store['name']}:\n\n"
+        f"{link}\n\n"
+        "Отправьте её сотруднику. Когда он нажмёт Start, бот сам привяжет его к этому магазину."
     )
 
 

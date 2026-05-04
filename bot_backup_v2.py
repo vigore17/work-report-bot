@@ -25,15 +25,7 @@ from handlers.user import (
     my_reports,
     enter_im_orders,
 )
-from handlers.admin import (
-    admin_entry,
-    back_to_main,
-    admin_update_plans_entry,
-    admin_select_plan_store,
-    admin_save_plans,
-    admin_store_stats_entry,
-    admin_select_stats_store,
-)
+from handlers.admin import admin_entry
 from handlers.onboarding import (
     setup_store_entry,
     setup_store_name,
@@ -63,8 +55,6 @@ from states import (
     SETUP_REPORT_CHAT_ID,
     SETUP_BOSS_ID,
     SETUP_CONFIRM,
-    ADMIN_SET_PLANS_STORE,
-    ADMIN_SET_PLANS_VALUE,
 )
 
 from handlers.boss import (
@@ -160,31 +150,12 @@ def main():
         per_message=False,
     )
 
-    admin_plans_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(admin_update_plans_entry, pattern="^admin_update_plans$")],
-    states={
-        ADMIN_SET_PLANS_STORE: [
-            CallbackQueryHandler(admin_select_plan_store, pattern=r"^(admin_plan_store_\d+|admin_cancel)$")
-        ],
-        ADMIN_SET_PLANS_VALUE: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_plans)
-        ],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-    per_message=False,
-    )
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("cancel", cancel))
 
     app.add_handler(setup_conv)
     app.add_handler(report_conv)
-    
-    app.add_handler(admin_plans_conv)
-    app.add_handler(CallbackQueryHandler(admin_store_stats_entry, pattern="^admin_store_stats$"))
-    app.add_handler(CallbackQueryHandler(admin_select_stats_store, pattern=r"^(admin_stats_store_\d+|admin_cancel)$"))
-    app.add_handler(CallbackQueryHandler(back_to_main, pattern="^back_to_main$"))
 
     app.add_handler(CallbackQueryHandler(create_employee_invite, pattern="^create_employee_invite$"))
     app.add_handler(CallbackQueryHandler(my_reports, pattern="^my_reports$"))

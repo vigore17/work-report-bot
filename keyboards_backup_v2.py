@@ -33,9 +33,9 @@ def get_confirm_keyboard():
 
 def get_admin_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎯 Обновить планы", callback_data="admin_update_plans")],
-        [InlineKeyboardButton("📊 Статистика магазина", callback_data="admin_store_stats")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")],
+        [InlineKeyboardButton("➕ Добавить магазин", callback_data="admin_add_store")],
+        [InlineKeyboardButton("🎯 Установить планы", callback_data="admin_set_plans")],
+        [InlineKeyboardButton("💬 Установить chat_id", callback_data="admin_set_chat")],
     ])
 
 def get_user_stores_keyboard(stores):

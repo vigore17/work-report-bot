@@ -403,3 +403,26 @@ def get_available_months():
     rows = cur.fetchall()
     conn.close()
     return [row["month_key"] for row in rows]
+
+def get_store_month_stats(store_id: int, month_key: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            COUNT(r.id) AS reports_count,
+            COALESCE(SUM(r.gross_total), 0) AS gross_total,
+            COALESCE(SUM(r.daily_plan), 0) AS daily_plan,
+            COALESCE(SUM(r.retail_total), 0) AS retail_total,
+            COALESCE(SUM(r.wholesale_total), 0) AS wholesale_total,
+            COALESCE(SUM(r.acquiring_total), 0) AS acquiring_total,
+            COALESCE(SUM(r.im_orders), 0) AS im_orders,
+            COALESCE(SUM(r.cash_total), 0) AS cash_total
+        FROM reports r
+        WHERE r.store_id = ?
+          AND r.month_key = ?
+    """, (store_id, month_key))
+
+    row = cur.fetchone()
+    conn.close()
+    return row
