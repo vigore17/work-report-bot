@@ -2,7 +2,11 @@ import asyncio
 from datetime import datetime
 
 from db import get_connection
-from formatters import format_group_report, format_boss_report
+from formatters import (
+    format_group_report,
+    format_boss_report,
+    format_full_report,
+)
 
 
 async def scheduler_loop(app):
@@ -22,6 +26,7 @@ async def scheduler_loop(app):
                     s.name AS store_name,
                     s.report_chat_id,
                     s.boss_user_id,
+                    s.full_report_chat_id,
                     s.report_send_time
                 FROM reports r
                 JOIN stores s ON s.id = r.store_id
@@ -57,6 +62,15 @@ async def scheduler_loop(app):
                         )
                     except Exception as e:
                         print(f"Ошибка отправки отчёта боссу: {e}")
+                
+                if data.get("full_report_chat_id"):
+                    try:
+                        await app.bot.send_message(
+                            chat_id=data["full_report_chat_id"],
+                            text=format_full_report(data),
+                        )
+                    except Exception as e:
+                        print(f"Ошибка отправки полного отчёта: {e}")
 
                 cur.execute(
                     """

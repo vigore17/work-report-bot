@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, date
+import calendar
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
@@ -7,8 +8,10 @@ from db import (
     is_admin,
     get_store_by_id,
     update_store_plans,
+    update_store_plans_v2,
     set_acquiring_base,
     get_store_month_stats,
+    get_store_smart_month_stats,
 )
 from keyboards import get_admin_menu, get_main_menu
 from services.access import get_user_stores, is_super_admin
@@ -80,9 +83,9 @@ async def admin_update_plans_entry(update: Update, context: ContextTypes.DEFAULT
         await query.message.reply_text(
             f"Магазин: {store['name']}\n\n"
             "Введите новые данные одной строкой:\n"
-            "дневной_план план_эквайринга стартовый_эквайринг\n\n"
+            "дневной_план месячный_план_продаж план_эквайринга стартовый_эквайринг\n\n"
             "Пример:\n"
-            "80000 350000 0"
+            "80000 2500000 350000 0"
         )
         return ADMIN_SET_PLANS_VALUE
 
@@ -123,9 +126,9 @@ async def admin_select_plan_store(update: Update, context: ContextTypes.DEFAULT_
     await query.message.reply_text(
         f"Магазин: {selected_store['name']}\n\n"
         "Введите новые данные одной строкой:\n"
-        "дневной_план план_эквайринга стартовый_эквайринг\n\n"
+        "дневной_план месячный_план_продаж план_эквайринга стартовый_эквайринг\n\n"
         "Пример:\n"
-        "80000 350000 0"
+        "80000 2500000 350000 0"
     )
 
     return ADMIN_SET_PLANS_VALUE
@@ -135,7 +138,7 @@ async def admin_save_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     parts = text.replace(",", " ").split()
 
-    if len(parts) != 3:
+    if len(parts) != 4:
         await update.message.reply_text(
             "Нужно ввести 3 числа через пробел.\n"
             "Пример:\n"
@@ -145,8 +148,9 @@ async def admin_save_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         daily_plan = parse_int_amount(parts[0])
-        monthly_acquiring_plan = parse_int_amount(parts[1])
-        acquiring_base = parse_int_amount(parts[2])
+        monthly_sales_plan = parse_int_amount(parts[1])
+        monthly_acquiring_plan = parse_int_amount(parts[2])
+        acquiring_base = parse_int_amount(parts[3])
     except ValueError:
         await update.message.reply_text(
             "Все значения должны быть числами.\n"
@@ -159,7 +163,7 @@ async def admin_save_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     store_name = context.user_data["admin_plan_store_name"]
     month_key = datetime.now().strftime("%Y-%m")
 
-    update_store_plans(store_id, daily_plan, monthly_acquiring_plan)
+    update_store_plans_v2(store_id, daily_plan, monthly_sales_plan, monthly_acquiring_plan)
     set_acquiring_base(
         store_id=store_id,
         month_key=month_key,
@@ -173,6 +177,7 @@ async def admin_save_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ Планы обновлены.\n\n"
         f"Магазин: {store_name}\n"
         f"Дневной план: {daily_plan}\n"
+        f"Месячный план продаж: {monthly_sales_plan}\n"
         f"План эквайринга: {monthly_acquiring_plan}\n"
         f"Стартовый эквайринг за {month_key}: {acquiring_base}"
     )
@@ -227,25 +232,62 @@ async def admin_select_stats_store(update: Update, context: ContextTypes.DEFAULT
 
 
 async def send_store_stats(query, store):
-    month_key = datetime.now().strftime("%Y-%m")
-    stats = get_store_month_stats(store["id"], month_key)
+    today = date.today()
+    month_key = today.strftime("%Y-%m")
+
+    stats = get_store_smart_month_stats(store["id"], month_key)
+
+    if not stats:
+        await query.message.reply_text("Статистика не найдена.")
+        return
+
+    store_name = stats["store_name"]
+    monthly_sales_plan = stats["monthly_sales_plan"] or 0
+    daily_plan = stats["daily_plan"] or 0
 
     reports_count = stats["reports_count"] or 0
     gross_total = stats["gross_total"] or 0
-    daily_plan = stats["daily_plan"] or 0
     retail_total = stats["retail_total"] or 0
     wholesale_total = stats["wholesale_total"] or 0
     acquiring_total = stats["acquiring_total"] or 0
     im_orders = stats["im_orders"] or 0
     cash_total = stats["cash_total"] or 0
 
-    percent = round((gross_total / daily_plan) * 100) if daily_plan else 0
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    days_passed = today.day
+    days_left = max(days_in_month - days_passed, 0)
+
+    percent = round((gross_total / monthly_sales_plan) * 100) if monthly_sales_plan else 0
+    remaining = max(monthly_sales_plan - gross_total, 0)
+
+    if days_left > 0:
+        needed_per_day = round(remaining / days_left)
+    else:
+        needed_per_day = remaining
+
+    expected_by_today = round((monthly_sales_plan / days_in_month) * days_passed) if monthly_sales_plan else 0
+    diff = gross_total - expected_by_today
+
+    if monthly_sales_plan <= 0:
+        status = "⚠️ Месячный план не задан."
+    elif diff >= 0:
+        status = f"🚀 Идёте с опережением на {diff} ₽."
+    else:
+        status = f"⚠️ Отставание от графика: {abs(diff)} ₽."
 
     await query.message.reply_text(
         f"📊 Статистика магазина за {month_key}\n\n"
-        f"🏬 {store['name']}\n"
+        f"🏬 {store_name}\n"
         f"Отчётов: {reports_count}\n\n"
-        f"Общий: {daily_plan}/{gross_total}/{percent}%\n"
+        f"🎯 План месяца: {monthly_sales_plan}\n"
+        f"💰 Сделано: {gross_total}\n"
+        f"📈 Выполнение: {percent}%\n"
+        f"⏳ Осталось до плана: {remaining}\n\n"
+        f"📅 Дней прошло: {days_passed} из {days_in_month}\n"
+        f"📆 Дней осталось: {days_left}\n"
+        f"🔥 Нужно делать в день: {needed_per_day}\n\n"
+        f"{status}\n\n"
+        f"Дополнительно:\n"
         f"Розница: {retail_total}\n"
         f"Опт: {wholesale_total}\n"
         f"Эквайринг: {acquiring_total}\n"

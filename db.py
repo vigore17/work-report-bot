@@ -426,3 +426,58 @@ def get_store_month_stats(store_id: int, month_key: str):
     row = cur.fetchone()
     conn.close()
     return row
+
+def update_store_plans_v2(
+    store_id: int,
+    daily_plan: int,
+    monthly_sales_plan: int,
+    monthly_acquiring_plan: int,
+):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE stores
+        SET daily_plan = ?,
+            monthly_sales_plan = ?,
+            monthly_acquiring_plan = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (
+        daily_plan,
+        monthly_sales_plan,
+        monthly_acquiring_plan,
+        store_id,
+    ))
+
+    conn.commit()
+    conn.close()
+
+def get_store_smart_month_stats(store_id: int, month_key: str):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            s.name AS store_name,
+            s.monthly_sales_plan,
+            s.daily_plan,
+            s.monthly_acquiring_plan,
+            COUNT(r.id) AS reports_count,
+            COALESCE(SUM(r.gross_total), 0) AS gross_total,
+            COALESCE(SUM(r.retail_total), 0) AS retail_total,
+            COALESCE(SUM(r.wholesale_total), 0) AS wholesale_total,
+            COALESCE(SUM(r.acquiring_total), 0) AS acquiring_total,
+            COALESCE(SUM(r.im_orders), 0) AS im_orders,
+            COALESCE(SUM(r.cash_total), 0) AS cash_total
+        FROM stores s
+        LEFT JOIN reports r
+            ON r.store_id = s.id
+           AND r.month_key = ?
+        WHERE s.id = ?
+        GROUP BY s.id
+    """, (month_key, store_id))
+
+    row = cur.fetchone()
+    conn.close()
+    return row

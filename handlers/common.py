@@ -5,6 +5,7 @@ from db import is_admin
 from keyboards import get_main_menu
 from services.access import get_user_store_role, get_global_role
 from handlers.onboarding import setup_keyboard, store_admin_menu, join_by_invite
+from handlers.boss import boss_menu_keyboard
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -23,6 +24,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     user = update.effective_user
+    print(f"START FROM user_id={user.id}, username={user.username}, first_name={user.first_name}")
     global_role = get_global_role(user.id)
     store_role = get_user_store_role(user.id)
 
@@ -30,6 +32,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Привет, главный админ. Выбери действие:",
             reply_markup=get_main_menu(True),
+        )
+        return
+
+    if global_role == "boss":
+        await update.message.reply_text(
+            "Панель босса:",
+            reply_markup=boss_menu_keyboard(),
         )
         return
 
