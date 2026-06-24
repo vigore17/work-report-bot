@@ -4,14 +4,12 @@ import calendar
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from services.store_stats import format_store_smart_stats
 from db import (
     is_admin,
     get_store_by_id,
     update_store_plans,
     update_store_plans_v2,
     set_acquiring_base,
-    upsert_store_stats_subscription,
     get_store_month_stats,
     get_store_smart_month_stats,
     update_full_report_chat_id,
@@ -25,11 +23,6 @@ from states import (
     ADMIN_SET_PLANS_VALUE,
     SET_FULL_REPORT_CHAT_STORE,
     SET_FULL_REPORT_CHAT_VALUE,
-    STATS_SUB_STORE,
-    STATS_SUB_TARGET,
-    STATS_SUB_CHAT_ID,
-    STATS_SUB_PERIOD,
-    STATS_SUB_TIME,
 )
 
 
@@ -242,8 +235,68 @@ async def admin_select_stats_store(update: Update, context: ContextTypes.DEFAULT
 
 
 async def send_store_stats(query, store):
-    text = format_store_smart_stats(store["id"])
-    await query.message.reply_text(text)
+    today = date.today()
+    month_key = today.strftime("%Y-%m")
+
+    stats = get_store_smart_month_stats(store["id"], month_key)
+
+    if not stats:
+        await query.message.reply_text("Статистика не найдена.")
+        return
+
+    store_name = stats["store_name"]
+    monthly_sales_plan = stats["monthly_sales_plan"] or 0
+    daily_plan = stats["daily_plan"] or 0
+
+    reports_count = stats["reports_count"] or 0
+    gross_total = stats["gross_total"] or 0
+    retail_total = stats["retail_total"] or 0
+    wholesale_total = stats["wholesale_total"] or 0
+    acquiring_total = stats["acquiring_total"] or 0
+    im_orders = stats["im_orders"] or 0
+    cash_total = stats["cash_total"] or 0
+
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    days_passed = today.day
+    days_left = max(days_in_month - days_passed, 0)
+
+    percent = round((gross_total / monthly_sales_plan) * 100) if monthly_sales_plan else 0
+    remaining = max(monthly_sales_plan - gross_total, 0)
+
+    if days_left > 0:
+        needed_per_day = round(remaining / days_left)
+    else:
+        needed_per_day = remaining
+
+    expected_by_today = round((monthly_sales_plan / days_in_month) * days_passed) if monthly_sales_plan else 0
+    diff = gross_total - expected_by_today
+
+    if monthly_sales_plan <= 0:
+        status = "⚠️ Месячный план не задан."
+    elif diff >= 0:
+        status = f"🚀 Идёте с опережением на {diff} ₽."
+    else:
+        status = f"⚠️ Отставание от графика: {abs(diff)} ₽."
+
+    await query.message.reply_text(
+        f"📊 Статистика магазина за {month_key}\n\n"
+        f"🏬 {store_name}\n"
+        f"Отчётов: {reports_count}\n\n"
+        f"🎯 План месяца: {monthly_sales_plan}\n"
+        f"💰 Сделано: {gross_total}\n"
+        f"📈 Выполнение: {percent}%\n"
+        f"⏳ Осталось до плана: {remaining}\n\n"
+        f"📅 Дней прошло: {days_passed} из {days_in_month}\n"
+        f"📆 Дней осталось: {days_left}\n"
+        f"🔥 Нужно делать в день: {needed_per_day}\n\n"
+        f"{status}\n\n"
+        f"Дополнительно:\n"
+        f"Розница: {retail_total}\n"
+        f"Опт: {wholesale_total}\n"
+        f"Эквайринг: {acquiring_total}\n"
+        f"Заказы ИМ: {im_orders}\n"
+        f"Наличные: {cash_total}"
+    )
 
 async def set_full_report_chat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -367,205 +420,5 @@ async def admin_save_full_report_chat(update: Update, context: ContextTypes.DEFA
             f"Магазин: {store_name}\n"
             f"chat_id: {value}"
         )
-
-    return ConversationHandler.END
-
-def stats_target_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("В личные сообщения", callback_data="stats_sub_target_private")],
-        [InlineKeyboardButton("В группу", callback_data="stats_sub_target_group")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
-    ])
-
-
-def stats_period_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Каждый день", callback_data="stats_sub_period_1")],
-        [InlineKeyboardButton("Раз в 2 дня", callback_data="stats_sub_period_2")],
-        [InlineKeyboardButton("Раз в 3 дня", callback_data="stats_sub_period_3")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")],
-    ])
-
-
-async def admin_stats_subscription_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = update.effective_user.id
-    stores = get_user_stores(user_id)
-
-    if not stores:
-        await query.message.reply_text("У вас нет магазинов для настройки статистики.")
-        return ConversationHandler.END
-
-    context.user_data.clear()
-
-    if len(stores) == 1:
-        store = stores[0]
-        context.user_data["stats_sub_store_id"] = store["id"]
-        context.user_data["stats_sub_store_name"] = store["name"]
-
-        await query.message.reply_text(
-            f"Магазин: {store['name']}\n\n"
-            "Куда отправлять статистику?",
-            reply_markup=stats_target_keyboard(),
-        )
-        return STATS_SUB_TARGET
-
-    await query.message.reply_text(
-        "Выбери магазин для отправки статистики:",
-        reply_markup=stores_keyboard(stores, "admin_stats_sub_store"),
-    )
-
-    return STATS_SUB_STORE
-
-
-async def admin_select_stats_subscription_store(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "admin_cancel":
-        context.user_data.clear()
-        await query.message.reply_text("Действие отменено.")
-        return ConversationHandler.END
-
-    store_id = int(query.data.replace("admin_stats_sub_store_", "", 1))
-    user_id = update.effective_user.id
-    stores = get_user_stores(user_id)
-
-    selected_store = None
-    for store in stores:
-        if store["id"] == store_id:
-            selected_store = store
-            break
-
-    if not selected_store:
-        await query.message.reply_text("⛔ Нет доступа к этому магазину.")
-        return ConversationHandler.END
-
-    context.user_data["stats_sub_store_id"] = selected_store["id"]
-    context.user_data["stats_sub_store_name"] = selected_store["name"]
-
-    await query.message.reply_text(
-        f"Магазин: {selected_store['name']}\n\n"
-        "Куда отправлять статистику?",
-        reply_markup=stats_target_keyboard(),
-    )
-
-    return STATS_SUB_TARGET
-
-
-async def admin_stats_subscription_target(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "admin_cancel":
-        context.user_data.clear()
-        await query.message.reply_text("Действие отменено.")
-        return ConversationHandler.END
-
-    if query.data == "stats_sub_target_private":
-        context.user_data["stats_sub_target_chat_id"] = update.effective_user.id
-
-        await query.message.reply_text(
-            "Как часто отправлять статистику?",
-            reply_markup=stats_period_keyboard(),
-        )
-        return STATS_SUB_PERIOD
-
-    if query.data == "stats_sub_target_group":
-        await query.message.reply_text(
-            "Введите chat_id группы, куда отправлять статистику.\n\n"
-            "Пример:\n"
-            "-1001234567890"
-        )
-        return STATS_SUB_CHAT_ID
-
-    await query.message.reply_text("Не понял выбор. Попробуйте заново.")
-    return STATS_SUB_TARGET
-
-
-async def admin_stats_subscription_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    try:
-        chat_id = int(text)
-    except ValueError:
-        await update.message.reply_text(
-            "chat_id должен быть числом.\n"
-            "Пример: -1001234567890"
-        )
-        return STATS_SUB_CHAT_ID
-
-    context.user_data["stats_sub_target_chat_id"] = chat_id
-
-    await update.message.reply_text(
-        "Как часто отправлять статистику?",
-        reply_markup=stats_period_keyboard(),
-    )
-
-    return STATS_SUB_PERIOD
-
-
-async def admin_stats_subscription_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "admin_cancel":
-        context.user_data.clear()
-        await query.message.reply_text("Действие отменено.")
-        return ConversationHandler.END
-
-    period_days = int(query.data.replace("stats_sub_period_", "", 1))
-    context.user_data["stats_sub_period_days"] = period_days
-
-    await query.message.reply_text(
-        "Во сколько отправлять статистику?\n\n"
-        "Введите время в формате ЧЧ:ММ.\n"
-        "Например: 10:00"
-    )
-
-    return STATS_SUB_TIME
-
-
-async def admin_stats_subscription_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    try:
-        datetime.strptime(text, "%H:%M")
-    except ValueError:
-        await update.message.reply_text(
-            "Введите время в формате ЧЧ:ММ.\n"
-            "Например: 10:00"
-        )
-        return STATS_SUB_TIME
-
-    store_id = context.user_data.get("stats_sub_store_id")
-    store_name = context.user_data.get("stats_sub_store_name")
-    target_chat_id = context.user_data.get("stats_sub_target_chat_id")
-    period_days = context.user_data.get("stats_sub_period_days")
-
-    if not store_id or not target_chat_id or not period_days:
-        await update.message.reply_text("Данные потерялись. Начните заново через /start.")
-        context.user_data.clear()
-        return ConversationHandler.END
-
-    upsert_store_stats_subscription(
-        store_id=store_id,
-        created_by=update.effective_user.id,
-        target_chat_id=target_chat_id,
-        period_days=period_days,
-        send_time=text,
-    )
-
-    context.user_data.clear()
-
-    await update.message.reply_text(
-        f"✅ Отправка статистики настроена.\n\n"
-        f"Магазин: {store_name}\n"
-        f"Получатель: {target_chat_id}\n"
-        f"Периодичность: раз в {period_days} дн.\n"
-        f"Время: {text}"
-    )
 
     return ConversationHandler.END

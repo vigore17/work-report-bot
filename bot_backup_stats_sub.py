@@ -37,12 +37,6 @@ from handlers.admin import (
     admin_full_report_chat_entry,
     admin_select_full_report_store,
     admin_save_full_report_chat,
-    admin_stats_subscription_entry,
-    admin_select_stats_subscription_store,
-    admin_stats_subscription_target,
-    admin_stats_subscription_chat_id,
-    admin_stats_subscription_period,
-    admin_stats_subscription_time,
 )
 from handlers.onboarding import (
     setup_store_entry,
@@ -77,11 +71,6 @@ from states import (
     ADMIN_SET_PLANS_VALUE,
     SET_FULL_REPORT_CHAT_STORE,
     SET_FULL_REPORT_CHAT_VALUE,
-    STATS_SUB_STORE,
-    STATS_SUB_TARGET,
-    STATS_SUB_CHAT_ID,
-    STATS_SUB_PERIOD,
-    STATS_SUB_TIME,
 )
 
 from handlers.boss import (
@@ -216,43 +205,6 @@ def main():
         per_message=False,
     )
 
-    stats_subscription_conv = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(
-                admin_stats_subscription_entry,
-                pattern="^admin_stats_subscription$"
-            )
-        ],
-        states={
-            STATS_SUB_STORE: [
-                CallbackQueryHandler(
-                    admin_select_stats_subscription_store,
-                    pattern=r"^(admin_stats_sub_store_\d+|admin_cancel)$"
-                )
-            ],
-            STATS_SUB_TARGET: [
-                CallbackQueryHandler(
-                    admin_stats_subscription_target,
-                    pattern=r"^(stats_sub_target_private|stats_sub_target_group|admin_cancel)$"
-                )
-            ],
-            STATS_SUB_CHAT_ID: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_stats_subscription_chat_id)
-            ],
-            STATS_SUB_PERIOD: [
-                CallbackQueryHandler(
-                    admin_stats_subscription_period,
-                    pattern=r"^(stats_sub_period_1|stats_sub_period_2|stats_sub_period_3|admin_cancel)$"
-                )
-            ],
-            STATS_SUB_TIME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_stats_subscription_time)
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=False,
-    )
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("cancel", cancel))
@@ -262,7 +214,6 @@ def main():
     
     app.add_handler(admin_plans_conv)
     app.add_handler(full_report_chat_conv)
-    app.add_handler(stats_subscription_conv)
 
     app.add_handler(CallbackQueryHandler(admin_store_stats_entry, pattern="^admin_store_stats$"))
     app.add_handler(CallbackQueryHandler(admin_select_stats_store, pattern=r"^(admin_stats_store_\d+|admin_cancel)$"))

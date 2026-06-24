@@ -1,18 +1,13 @@
 import asyncio
 from datetime import datetime
 
-from db import (
-    get_connection,
-    get_due_store_stats_subscriptions,
-    mark_store_stats_subscription_sent,
-)
+from db import get_connection
 from formatters import (
     format_group_report,
     format_boss_report,
     format_full_report,
 )
 
-from services.store_stats import format_store_smart_stats
 
 async def scheduler_loop(app):
     print("SCHEDULER LOOP RUNNING")
@@ -86,22 +81,7 @@ async def scheduler_loop(app):
                     """,
                     (group_message_id, data["id"])
                 )
-            due_subscriptions = get_due_store_stats_subscriptions(now_time, today)
 
-            for sub in due_subscriptions:
-                try:
-                    text = format_store_smart_stats(sub["store_id"])
-
-                    await app.bot.send_message(
-                        chat_id=sub["target_chat_id"],
-                        text=text,
-                    )
-
-                    mark_store_stats_subscription_sent(sub["id"], today)
-
-                except Exception as e:
-                    print(f"Ошибка отправки статистики магазина: {e}")
- 
             conn.commit()
             conn.close()
 

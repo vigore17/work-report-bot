@@ -35,7 +35,6 @@ def get_admin_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎯 Обновить планы", callback_data="admin_update_plans")],
         [InlineKeyboardButton("📊 Статистика магазина", callback_data="admin_store_stats")],
-        [InlineKeyboardButton("📤 Отправлять статистику", callback_data="admin_stats_subscription")],
         [InlineKeyboardButton("📩 Дубль полного отчёта", callback_data="admin_store_duble")],
         [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")],
     ])

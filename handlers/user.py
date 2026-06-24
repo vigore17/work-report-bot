@@ -264,3 +264,40 @@ async def my_reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await query.message.reply_text("\n".join(lines))
+
+async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    stores = get_user_stores(user_id)
+
+    if not stores:
+        await update.message.reply_text(
+            "⛔ Вы не привязаны ни к одному магазину.\n"
+            "Попросите директора прислать ссылку-приглашение."
+        )
+        return ConversationHandler.END
+
+    context.user_data.clear()
+
+    if len(stores) == 1:
+        store = stores[0]
+
+        context.user_data["store_id"] = store["id"]
+        context.user_data["store_name"] = store["name"]
+        context.user_data["daily_plan"] = store["daily_plan"]
+        context.user_data["monthly_acquiring_plan"] = store["monthly_acquiring_plan"]
+        context.user_data["report_chat_id"] = store["report_chat_id"]
+        context.user_data["boss_user_id"] = store["boss_user_id"]
+        context.user_data["report_send_time"] = store["report_send_time"]
+
+        await update.message.reply_text(
+            f"{store['name']}\nВведи общую сумму за день:"
+        )
+
+        return ENTERING_GROSS_TOTAL
+
+    await update.message.reply_text(
+        "Выбери магазин для отчёта:",
+        reply_markup=get_user_stores_keyboard(stores)
+    )
+
+    return SELECTING_STORE
