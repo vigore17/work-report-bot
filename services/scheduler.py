@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 from datetime import datetime
 
 from db import (
@@ -11,15 +12,34 @@ from formatters import (
     format_boss_report,
     format_full_report,
 )
-
 from services.store_stats import format_store_smart_stats
 
+
+async def safe_send(bot, chat_id, text, label):
+    if not chat_id:
+        print(f"{label}: SKIP no chat_id", flush=True)
+        return None
+
+    try:
+        msg = await bot.send_message(chat_id=chat_id, text=text)
+        print(f"{label}: OK message_id={msg.message_id}", flush=True)
+        return msg
+    except Exception as e:
+        print(f"{label}: ERROR {e}", flush=True)
+        traceback.print_exc()
+        return None
+
+
 async def scheduler_loop(app):
-    print("SCHEDULER LOOP RUNNING")
+    print("SCHEDULER LOOP RUNNING", flush=True)
+
     while True:
+        conn = None
+
         try:
-            now_time = datetime.now().strftime("%H:%M")
-            today = datetime.now().strftime("%Y-%m-%d")
+            now = datetime.now()
+            now_time = now.strftime("%H:%M")
+            today = now.strftime("%Y-%m-%d")
 
             conn = get_connection()
             cur = conn.cursor()
@@ -37,45 +57,50 @@ async def scheduler_loop(app):
                 JOIN stores s ON s.id = r.store_id
                 WHERE r.sent_to_chat = 0
                   AND r.report_date = ?
+                ORDER BY r.id ASC
                 """,
                 (today,)
             )
 
             rows = cur.fetchall()
 
+            if rows:
+                print(
+                    f"SCHEDULER: found unsent reports={len(rows)} today={today} now={now_time}",
+                    flush=True
+                )
+
             for row in rows:
                 data = dict(row)
+                report_id = data["id"]
+                store_name = data["store_name"]
                 send_time = data.get("report_send_time") or "19:55"
 
+                print(
+                    f"SCHEDULER: check report_id={report_id} store={store_name} send_time={send_time} now={now_time}",
+                    flush=True
+                )
+
                 if now_time < send_time:
+                    print(
+                        f"SCHEDULER: skip report_id={report_id}, time not reached",
+                        flush=True
+                    )
                     continue
 
-                group_message_id = None
+                group_msg = await safe_send(
+                    app.bot,
+                    data.get("report_chat_id"),
+                    format_group_report(data),
+                    f"SCHEDULER report_id={report_id} GROUP",
+                )
 
-                if data.get("report_chat_id"):
-                    sent_group = await app.bot.send_message(
-                        chat_id=data["report_chat_id"],
-                        text=format_group_report(data),
+                if not group_msg:
+                    print(
+                        f"SCHEDULER: report_id={report_id} group failed, NOT marking sent",
+                        flush=True
                     )
-                    group_message_id = sent_group.message_id
-
-                if data.get("boss_user_id"):
-                    try:
-                        await app.bot.send_message(
-                            chat_id=data["boss_user_id"],
-                            text=format_boss_report(data),
-                        )
-                    except Exception as e:
-                        print(f"Ошибка отправки отчёта боссу: {e}")
-                
-                if data.get("full_report_chat_id"):
-                    try:
-                        await app.bot.send_message(
-                            chat_id=data["full_report_chat_id"],
-                            text=format_full_report(data),
-                        )
-                    except Exception as e:
-                        print(f"Ошибка отправки полного отчёта: {e}")
+                    continue
 
                 cur.execute(
                     """
@@ -84,28 +109,65 @@ async def scheduler_loop(app):
                         sent_message_id = ?
                     WHERE id = ?
                     """,
-                    (group_message_id, data["id"])
+                    (group_msg.message_id, report_id)
                 )
+                conn.commit()
+
+                print(
+                    f"SCHEDULER: report_id={report_id} marked sent",
+                    flush=True
+                )
+
+                await safe_send(
+                    app.bot,
+                    data.get("boss_user_id"),
+                    format_boss_report(data),
+                    f"SCHEDULER report_id={report_id} BOSS",
+                )
+
+                await safe_send(
+                    app.bot,
+                    data.get("full_report_chat_id"),
+                    format_full_report(data),
+                    f"SCHEDULER report_id={report_id} FULL",
+                )
+
+                print(
+                    f"SCHEDULER: report_id={report_id} done",
+                    flush=True
+                )
+
             due_subscriptions = get_due_store_stats_subscriptions(now_time, today)
 
             for sub in due_subscriptions:
                 try:
                     text = format_store_smart_stats(sub["store_id"])
 
-                    await app.bot.send_message(
-                        chat_id=sub["target_chat_id"],
-                        text=text,
+                    msg = await safe_send(
+                        app.bot,
+                        sub["target_chat_id"],
+                        text,
+                        f"SCHEDULER stats_sub_id={sub['id']}",
                     )
 
-                    mark_store_stats_subscription_sent(sub["id"], today)
+                    if msg:
+                        mark_store_stats_subscription_sent(sub["id"], today)
 
                 except Exception as e:
-                    print(f"Ошибка отправки статистики магазина: {e}")
- 
-            conn.commit()
-            conn.close()
+                    print(f"Ошибка отправки статистики магазина: {e}", flush=True)
+                    traceback.print_exc()
+
+            if conn:
+                conn.close()
 
         except Exception as e:
-            print(f"Ошибка scheduler_loop: {e}")
+            print(f"Ошибка scheduler_loop: {e}", flush=True)
+            traceback.print_exc()
+
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         await asyncio.sleep(30)
