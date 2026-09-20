@@ -6,3 +6,16 @@ __pycache__/
 *.db
 *.sqlite
 *.log
+
+# Emergency/local backups
+backups/
+*_backup_*.py
+*_backup*.py
+
+# One-off recovery scripts
+force_send_report.py
+force_send_report_*.py
+
+# Local databases/backups
+*.db
+*backup*.db
