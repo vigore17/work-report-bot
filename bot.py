@@ -11,13 +11,14 @@ from telegram.ext import (
     filters,
 )
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, TEST_REPORT_USER_ID
 from db import init_db
 from handlers.common import start, cancel, help_command
 from handlers.user import (
     send_report_entry,
     report_command,
     select_store,
+    test_report_command,
     enter_gross_total,
     enter_retail_total,
     enter_acquiring_total,
@@ -99,21 +100,93 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 async def error_handler(update, context):
     logger.error("Exception while handling an update:", exc_info=context.error)
 
+async def webhook_guard(app):
+    while True:
+        try:
+            info = await app.bot.get_webhook_info()
+
+            if info.url:
+                bad_url = info.url
+
+                logger.error(
+                    "UNEXPECTED WEBHOOK DETECTED: %s",
+                    bad_url,
+                )
+
+                await app.bot.delete_webhook(
+                    drop_pending_updates=False
+                )
+
+                logger.warning(
+                    "UNEXPECTED WEBHOOK DELETED"
+                )
+
+                if TEST_REPORT_USER_ID:
+                    try:
+                        await app.bot.send_message(
+                            chat_id=TEST_REPORT_USER_ID,
+                            text=(
+                                "⚠️ Work Report Bot обнаружил "
+                                "посторонний webhook и автоматически "
+                                "удалил его.\n\n"
+                                f"Webhook: {bad_url}"
+                            ),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to send webhook alert"
+                        )
+
+        except Exception:
+            logger.exception("Webhook guard error")
+
+        await asyncio.sleep(60)
+
+
 async def post_init(app):
-    print("SCHEDULER STARTED")
+    info = await app.bot.get_webhook_info()
+
+    if info.url:
+        logger.warning(
+            "Webhook found on startup: %s. Deleting.",
+            info.url,
+        )
+
+        await app.bot.delete_webhook(
+            drop_pending_updates=False
+        )
+
+    print("SCHEDULER STARTED", flush=True)
+
     asyncio.create_task(scheduler_loop(app))
+    asyncio.create_task(webhook_guard(app))
 
 def main():
     init_db()
 
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(30)
+        .build()
+    )
 
     report_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(send_report_entry, pattern="^send_report$")],
+        entry_points=[
+            CallbackQueryHandler(send_report_entry, pattern="^send_report$"),
+            CommandHandler("report", report_command),
+            CommandHandler("testreport", test_report_command),
+        ],
         states={
             SELECTING_STORE: [
                 CallbackQueryHandler(select_store, pattern=r"^store_\d+$"),
@@ -135,10 +208,14 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, enter_cashbox_total)
             ],
             CONFIRMING_REPORT: [
-                CallbackQueryHandler(confirm_report, pattern="^(confirm_report|cancel_report)$")
+                CallbackQueryHandler(
+                    confirm_report,
+                    pattern="^(confirm_report|cancel_report)$"
+                )
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
         per_message=False,
     )
 
@@ -178,20 +255,28 @@ def main():
     )
 
     admin_plans_conv = ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(send_report_entry, pattern="^send_report$"),
-        CommandHandler("report", report_command),
-    ],
-    states={
-        ADMIN_SET_PLANS_STORE: [
-            CallbackQueryHandler(admin_select_plan_store, pattern=r"^(admin_plan_store_\d+|admin_cancel)$")
+        entry_points=[
+            CallbackQueryHandler(
+                admin_update_plans_entry,
+                pattern="^admin_update_plans$"
+            )
         ],
-        ADMIN_SET_PLANS_VALUE: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_plans)
-        ],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-    per_message=False,
+        states={
+            ADMIN_SET_PLANS_STORE: [
+                CallbackQueryHandler(
+                    admin_select_plan_store,
+                    pattern=r"^(admin_plan_store_\d+|admin_cancel)$"
+                )
+            ],
+            ADMIN_SET_PLANS_VALUE: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    admin_save_plans
+                )
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
 
     full_report_chat_conv = ConversationHandler(
@@ -255,7 +340,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("cancel", cancel))
 
     app.add_handler(setup_conv)
     app.add_handler(report_conv)
@@ -280,7 +364,9 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    app.run_polling()
+    app.run_polling(
+        allowed_updates=["message", "callback_query"]
+    )
 
 
 if __name__ == "__main__":
