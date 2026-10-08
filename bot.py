@@ -23,6 +23,7 @@ from handlers.user import (
     enter_retail_total,
     enter_acquiring_total,
     enter_cashbox_total,
+    confirm_cashbox_repeat,
     confirm_report,
     my_reports,
     enter_im_orders,
@@ -65,6 +66,7 @@ from states import (
     ENTERING_ACQUIRING_TOTAL,
     ENTERING_IM_ORDERS,
     ENTERING_CASHBOX_TOTAL,
+    CONFIRMING_CASHBOX_REPEAT,
     CONFIRMING_REPORT,
     SETUP_STORE_NAME,
     SETUP_DAILY_PLAN,
@@ -206,6 +208,12 @@ def main():
             ],
             ENTERING_CASHBOX_TOTAL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, enter_cashbox_total)
+            ],
+            CONFIRMING_CASHBOX_REPEAT: [
+                CallbackQueryHandler(
+                    confirm_cashbox_repeat,
+                    pattern=r"^cashbox_repeat_(yes|edit)$",
+                ),
             ],
             CONFIRMING_REPORT: [
                 CallbackQueryHandler(

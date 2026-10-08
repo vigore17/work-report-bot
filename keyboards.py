@@ -31,6 +31,13 @@ def get_confirm_keyboard():
     ])
 
 
+def get_cashbox_repeat_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Да, верно", callback_data="cashbox_repeat_yes")],
+        [InlineKeyboardButton("✏️ Исправить", callback_data="cashbox_repeat_edit")],
+    ])
+
+
 def get_admin_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🎯 Обновить планы", callback_data="admin_update_plans")],

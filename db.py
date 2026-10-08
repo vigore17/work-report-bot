@@ -152,6 +152,26 @@ def get_monthly_acquiring_sum(store_id: int, month_key: str) -> int:
     return int(row["total"])
 
 
+def get_previous_day_cashbox(store_id: int, report_date: str) -> int | None:
+    from datetime import date, timedelta
+
+    yesterday = (
+        date.fromisoformat(report_date) - timedelta(days=1)
+    ).isoformat()
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT cashbox_total FROM reports "
+            "WHERE store_id = ? AND report_date = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (store_id, yesterday),
+        ).fetchone()
+        return int(row["cashbox_total"]) if row else None
+    finally:
+        conn.close()
+
+
 def save_report(
     store_id: int,
     user_id: int,

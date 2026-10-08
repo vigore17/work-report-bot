@@ -12,8 +12,9 @@ from db import (
     get_monthly_acquiring_sum,
     save_report,
     get_last_reports_by_user,
+    get_previous_day_cashbox,
 )
-from keyboards import get_stores_keyboard, get_confirm_keyboard
+from keyboards import get_stores_keyboard, get_confirm_keyboard, get_cashbox_repeat_keyboard
 from utils import parse_int_amount, get_today_str, get_month_key, calculate_metrics
 from formatters import (
     format_report_message,
@@ -31,6 +32,7 @@ from states import (
     ENTERING_CASHBOX_TOTAL,
     CONFIRMING_REPORT,
     ENTERING_IM_ORDERS,
+    CONFIRMING_CASHBOX_REPEAT,
 )
 
 async def safe_query_answer(query, label: str = ""):
@@ -172,17 +174,71 @@ async def enter_im_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def enter_cashbox_total(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        context.user_data["cashbox_total"] = parse_int_amount(update.message.text)
+        amount = parse_int_amount(update.message.text)
     except ValueError:
         await update.message.reply_text("Введите число без букв. Например: 372014")
         return ENTERING_CASHBOX_TOTAL
 
+    context.user_data["cashbox_total"] = amount
     report_date = get_today_str()
+    context.user_data["cashbox_report_date"] = report_date
+
+    previous = get_previous_day_cashbox(
+        context.user_data["store_id"], report_date
+    )
+
+    if previous is not None and amount == previous:
+        from datetime import date, timedelta
+
+        yesterday = (
+            date.fromisoformat(report_date) - timedelta(days=1)
+        ).strftime("%d.%m.%Y")
+
+        warning = (
+            "⚠️ Внимание! Сумма в кассе совпадает со вчерашней.\n\n"
+            f"Вчера ({yesterday}): {previous:,} ₽\n"
+            f"Сегодня: {amount:,} ₽\n\n"
+            "Проверь дату в 1С. Сумма верная?"
+        )
+
+        await update.message.reply_text(
+            warning.replace(",", " "),
+            reply_markup=get_cashbox_repeat_keyboard()
+        )
+        return CONFIRMING_CASHBOX_REPEAT
+
+    return await _show_report_preview(update, context)
+
+
+async def confirm_cashbox_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_query_answer(query, "confirm_cashbox_repeat")
+
+    if query.data == "cashbox_repeat_edit":
+        context.user_data.pop("cashbox_total", None)
+        context.user_data.pop("metrics", None)
+        await query.message.reply_text("✏️ Введи исправленную сумму в кассе:")
+        return ENTERING_CASHBOX_TOTAL
+
+    if query.data == "cashbox_repeat_yes":
+        if "cashbox_total" not in context.user_data or "store_id" not in context.user_data:
+            context.user_data.clear()
+            await query.message.reply_text("Данные потерялись. Начни заново через /start")
+            return ConversationHandler.END
+
+        return await _show_report_preview(update, context)
+
+    return CONFIRMING_CASHBOX_REPEAT
+
+
+async def _show_report_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    report_date = context.user_data.get("cashbox_report_date") or get_today_str()
     month_key = get_month_key(report_date)
+
     current_month_sum = (
-    get_acquiring_base(context.user_data["store_id"], month_key)
-    + get_monthly_acquiring_sum(context.user_data["store_id"], month_key)
-)
+        get_acquiring_base(context.user_data["store_id"], month_key)
+        + get_monthly_acquiring_sum(context.user_data["store_id"], month_key)
+    )
 
     metrics = calculate_metrics(
         gross_total=context.user_data["gross_total"],
@@ -201,7 +257,10 @@ async def enter_cashbox_total(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["metrics"] = metrics
 
     preview = format_preview(context.user_data["store_name"], metrics)
-    await update.message.reply_text(preview, reply_markup=get_confirm_keyboard())
+
+    await update.effective_message.reply_text(
+        preview, reply_markup=get_confirm_keyboard()
+    )
     return CONFIRMING_REPORT
 
 

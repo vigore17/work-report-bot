@@ -33,4 +33,5 @@
     STATS_SUB_CHAT_ID,
     STATS_SUB_PERIOD,
     STATS_SUB_TIME,
-) = range(29)
+    CONFIRMING_CASHBOX_REPEAT,
+) = range(30)
